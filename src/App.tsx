@@ -44,25 +44,41 @@ function HomeView({ onAnimeClick }: { onAnimeClick: (url: string) => void }) {
     const [isSearching, setIsSearching] = useState(false);
 
     useEffect(() => {
+        let mounted = true;
         fetchLatest().then(res => {
-            setLatest(res);
-            setLoading(false);
-        }).catch(() => setLoading(false));
+            if (mounted) {
+                setLatest(res);
+                setLoading(false);
+            }
+        }).catch(() => {
+            if (mounted) setLoading(false);
+        });
+        return () => { mounted = false; };
     }, []);
 
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
+    useEffect(() => {
         if (!searchQuery.trim()) {
             setSearchResults(null);
             return;
         }
-        setIsSearching(true);
-        try {
-            const res = await fetchSearch(searchQuery);
-            setSearchResults(res);
-        } catch (e) {} finally {
-            setIsSearching(false);
-        }
+        
+        const timeout = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const res = await fetchSearch(searchQuery);
+                setSearchResults(res);
+            } catch (e) {} finally {
+                setIsSearching(false);
+            }
+        }, 500);
+        
+        return () => clearTimeout(timeout);
+    }, [searchQuery]);
+
+    const handleSearch = async (e: React.FormEvent) => {
+        e.preventDefault();
+        // Since we have autocomplete, this can just act as a way to blur the keyboard on mobile
+        (document.activeElement as HTMLElement)?.blur?.();
     };
 
     if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-brand w-8 h-8" /></div>;
@@ -70,57 +86,87 @@ function HomeView({ onAnimeClick }: { onAnimeClick: (url: string) => void }) {
     return (
         <div className="pb-24 px-4 sm:px-6 pt-6 max-w-7xl mx-auto flex flex-col min-h-screen">
             {/* Header & Search */}
-            <div className="mb-8 relative z-10">
-                <div className="flex items-center justify-between font-sans mb-6">
-                    <h1 className="text-2xl font-bold tracking-tight">Nime<span className="text-brand">Stream</span></h1>
-                </div>
-                <form onSubmit={handleSearch} className="relative max-w-xl">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-5 w-5 text-gray-400" />
+            <div className="mb-8 relative z-50">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between font-sans mb-6 gap-2">
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-2xl font-bold tracking-tight">Nime<span className="text-brand">Stream</span></h1>
+                        <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+                            Website masih tahap pengembangan (Bila Error Wajar)
+                        </span>
                     </div>
-                    <input 
-                        type="text" 
-                        value={searchQuery}
-                        onChange={(e) => { setSearchQuery(e.target.value); if(!e.target.value) setSearchResults(null); }}
-                        className="block w-full pl-10 pr-3 py-3 border border-white/10 rounded-xl leading-5 bg-white/5 text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand sm:text-sm transition-all" 
-                        placeholder="Cari anime..." 
-                    />
-                </form>
+                </div>
+                <div className="relative max-w-xl">
+                    <form onSubmit={handleSearch} className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input 
+                            type="text" 
+                            value={searchQuery}
+                            onChange={(e) => { setSearchQuery(e.target.value); if(!e.target.value) setSearchResults(null); }}
+                            className="block w-full pl-10 pr-10 py-3 border border-white/10 rounded-xl leading-5 bg-white/5 text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand sm:text-sm transition-all" 
+                            placeholder="Cari anime..." 
+                        />
+                        {isSearching && (
+                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <Loader2 className="w-4 h-4 text-brand animate-spin" />
+                            </div>
+                        )}
+                    </form>
+
+                    {/* Autocomplete Dropdown */}
+                    {searchQuery.trim() && searchResults && (
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto w-full z-50">
+                            {searchResults.length === 0 ? (
+                                <div className="p-4 text-center text-sm text-gray-400">Tidak ada anime ditemukan.</div>
+                            ) : (
+                                <ul className="flex flex-col">
+                                    {searchResults.map((anime, i) => (
+                                        <li key={i} className="border-b border-white/5 last:border-b-0">
+                                            <button 
+                                                onClick={() => {
+                                                    setSearchQuery('');
+                                                    setSearchResults(null);
+                                                    onAnimeClick(anime.url);
+                                                }}
+                                                className="w-full flex items-center gap-3 p-3 outline-none text-left hover:bg-white/5 focus:bg-white/5 transition-colors group"
+                                            >
+                                                <img src={anime.image} alt="" className="w-10 h-14 object-cover rounded bg-white/5" loading="lazy" />
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-sm font-medium text-gray-200 group-hover:text-brand line-clamp-1 transition-colors">{anime.title}</h4>
+                                                    <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-500">
+                                                        {anime.type && <span className="bg-white/10 px-1.5 py-0.5 rounded">{anime.type}</span>}
+                                                        {anime.score && anime.score !== '?' && <span>⭐ {anime.score}</span>}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Content */}
-            {isSearching ? (
-                 <div className="flex-1 flex justify-center py-10"><Loader2 className="animate-spin text-brand w-8 h-8" /></div>
-            ) : searchResults ? (
-                <div className="flex-1">
-                    <h2 className="text-xl font-bold font-sans mb-4 flex items-center border-l-4 border-brand pl-3">Hasil Pencarian</h2>
-                    {searchResults.length === 0 ? (
-                        <p className="text-gray-400">Tidak ada anime ditemukan.</p>
-                    ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                            {searchResults.map((anime, i) => <AnimeCard key={i} anime={anime} onClick={() => onAnimeClick(anime.url)} />)}
-                        </div>
-                    )}
-                </div>
-            ) : (
-                <div className="flex-1">
-                    {/* Hero Slider Simple Layout */}
-                    {latest.length > 0 && (
-                        <div className="mb-10 relative rounded-2xl overflow-hidden aspect-[16/9] sm:aspect-[21/9] bg-[#111] group cursor-pointer" onClick={() => onAnimeClick(latest[0].url)}>
-                            <img src={latest[0].image} alt={latest[0].title} className="w-full h-full object-cover opacity-70 group-hover:scale-105 transition-transform duration-700" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent"></div>
-                            <div className="absolute bottom-0 left-0 p-4 sm:p-8 w-full md:w-2/3">
-                                <span className="bg-brand text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-sm uppercase tracking-wider mb-2 sm:mb-3 inline-block">Terbaru</span>
-                                <h1 className="text-xl sm:text-3xl md:text-4xl font-bold text-white mb-2 line-clamp-2">{latest[0].title}</h1>
-                                <div className="flex items-center text-xs sm:text-sm font-medium text-gray-300 gap-3">
-                                   <span className="flex items-center gap-1"><Play className="w-4 h-4 fill-current text-white" /> Eps {latest[0].episode?.replace(/[^0-9.]/g, '') || '?'}</span>
-                                </div>
+            <div className="flex-1">
+                {/* Hero Slider Simple Layout */}
+                {latest.length > 0 && (
+                    <div className="mb-10 relative rounded-2xl overflow-hidden aspect-[16/9] sm:aspect-[21/9] bg-[#111] group cursor-pointer" onClick={() => onAnimeClick(latest[0].url)}>
+                        <img src={latest[0].image} alt={latest[0].title} className="w-full h-full object-cover opacity-70 group-hover:scale-105 transition-transform duration-700" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent"></div>
+                        <div className="absolute bottom-0 left-0 p-4 sm:p-8 w-full md:w-2/3">
+                            <span className="bg-brand text-white text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 rounded-sm uppercase tracking-wider mb-2 sm:mb-3 inline-block">Terbaru</span>
+                            <h1 className="text-xl sm:text-3xl md:text-4xl font-bold text-white mb-2 line-clamp-2">{latest[0].title}</h1>
+                            <div className="flex items-center text-xs sm:text-sm font-medium text-gray-300 gap-3">
+                               <span className="flex items-center gap-1"><Play className="w-4 h-4 fill-current text-white" /> Eps {latest[0].episode?.replace(/[^0-9.]/g, '') || '?'}</span>
                             </div>
                         </div>
-                    )}
-                    <Section title="Baru Ditambahkan" data={latest.slice(1, 15)} onAnimeClick={onAnimeClick} />
-                </div>
-            )}
+                    </div>
+                )}
+                <Section title="Baru Ditambahkan" data={latest.slice(1, 15)} onAnimeClick={onAnimeClick} />
+            </div>
         </div>
     );
 }

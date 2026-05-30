@@ -113,8 +113,15 @@ async function download(link: string) {
             'Referer': targetUrl
         }
         });
-        const $$ = cheerio.load(r.data);
-        const iframe = $$('iframe').attr('src');
+        const html = r.data;
+        const $$ = cheerio.load(html);
+        let iframe = $$('iframe').attr('src');
+        if (!iframe) {
+            const vidlionMatch = html.match(/\[vidlion\s+id=([^\]]+)\]/);
+            if (vidlionMatch) {
+               iframe = `https://vidhide.com/embed/${vidlionMatch[1]}`;
+            }
+        }
         if (iframe) data.push({ server: name, url: iframe });
     } catch (e) {
         console.log("Error fetching server:", name);
